@@ -6,7 +6,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-      
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -25,7 +25,7 @@ jobs:
               <server>
                 <id>github</id>
                 <username>\${{ github.actor }}</username>
-                <password>\${{ secrets.PAT }}</password>
+                <password>\${{ secrets.GITHUB_TOKEN }}</password>
               </server>
             </servers>
           </settings>
