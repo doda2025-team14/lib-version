@@ -21,7 +21,7 @@ jobs:
               <server>
                 <id>github</id>
                 <username>\${{ github.actor }}</username>
-                <password>\${{ secrets.GITHUB_TOKEN }}</password>
+                <password>\${{ secrets.PAT }}</password>
               </server>
             </servers>
           </settings>
