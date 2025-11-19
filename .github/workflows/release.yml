@@ -2,7 +2,9 @@ name: Release
 on: push
 jobs:
   build:
-    runs-on: maven:3.9-eclipse-temurin-25-noble
+    runs-on: ubuntu-24.04
+    container:
+      image: maven:3.9-eclipse-temurin-25-noble
     permissions:
       contents: read
       packages: write
