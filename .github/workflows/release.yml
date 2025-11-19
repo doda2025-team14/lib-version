@@ -3,8 +3,6 @@ on: push
 jobs:
   build:
     runs-on: ubuntu-24.04
-    container:
-      image: maven:3.9-eclipse-temurin-25-noble
     permissions:
       contents: read
       packages: write
@@ -12,6 +10,12 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+      
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'temurin'
         
       - name: Deploy to GitHub Packages
         run: mvn -B deploy
