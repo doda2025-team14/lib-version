@@ -1,0 +1,73 @@
+name: Release
+on: push
+jobs:
+  check-version:
+    runs-on: ubuntu-24.04
+    outputs:
+      should-deploy: ${{ steps.check.outputs.changed }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      
+      - name: Get current version
+        id: get-version
+        run: |
+          VERSION=$(grep -oP '<version>\K[^<]+' pom.xml | head -1)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Current version: $VERSION"
+      
+      - name: Compare with previous version
+        id: check
+        run: |
+          CURRENT_VERSION="${{ steps.get-version.outputs.version }}"
+          
+          # Skip SNAPSHOT versions
+          if [[ "$CURRENT_VERSION" == *"SNAPSHOT"* ]]; then
+            echo "SNAPSHOT version, skipping release"
+            echo "changed=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Try to get previous version
+          if git checkout HEAD~1 2>/dev/null; then
+            PREVIOUS_VERSION=$(grep -oP '<version>\K[^<]+' pom.xml | head -1)
+            git checkout -
+            echo "Previous version: $PREVIOUS_VERSION"
+          else
+            echo "First commit, treating as version change"
+            PREVIOUS_VERSION=""
+          fi
+          
+          if [ "$CURRENT_VERSION" != "$PREVIOUS_VERSION" ]; then
+            echo "Version changed, will deploy"
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "Version unchanged, skipping deploy"
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+
+
+  build:
+    needs: check-version
+    runs-on: ubuntu-24.04
+    if: needs.check-version.outputs.should-deploy == 'true'
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+        
+      - name: Deploy to GitHub Packages
+        run: mvn -B deploy
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
