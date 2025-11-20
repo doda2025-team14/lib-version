@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -e
+set -x
 
 BRANCH="${BRANCH_NAME:-unknown}"
 
