@@ -1,0 +1,56 @@
+name: Pre-Release
+
+on:
+  push:
+    branches-ignore:
+      - master
+
+jobs:
+  prerelease:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version from pom.xml
+        id: version
+        run: |
+          VERSION=$(grep -oP '<version>\K[^<]+' pom.xml | head -1)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Determine branch name
+        id: branch
+        run: |
+          RAW="${GITHUB_REF#refs/heads/}"
+          SAFE=$(echo "$RAW" | tr '/' '-' | tr '_' '-')
+          echo "branch=$SAFE" >> $GITHUB_OUTPUT
+
+      - name: Compute next prerelease tag
+        id: tag
+        run: |
+          BASE="${{ steps.version.outputs.version }}-${{ steps.branch.outputs.branch }}"
+          
+          # Count existing prereleases for this version / branch pattern
+          COUNT=$(git tag --list "${BASE}.*" | wc -l)
+          NEXT=$((COUNT + 1))
+          
+          TAG="${BASE}.${NEXT}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Next prerelease tag: $TAG"
+
+      - name: Create Git tag
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git tag "${{ steps.tag.outputs.tag }}"
+          git push origin "${{ steps.tag.outputs.tag }}"
+
+      - name: Create GitHub prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          prerelease: true
