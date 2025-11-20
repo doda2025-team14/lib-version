@@ -3,7 +3,7 @@ set -e
 
 BRANCH="${BRANCH_NAME:-unknown}"
 
-if [["$BRANCH" == "master" ]]; then
+if [[ "$BRANCH" == "master" ]]; then
   echo "Not creating prerelease on main branch."
   exit 0
 fi
