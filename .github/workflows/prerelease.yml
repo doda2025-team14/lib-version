@@ -1,56 +1,28 @@
-name: Pre-Release
+name: lib-version prerelease
 
 on:
   push:
     branches-ignore:
       - master
+  workflow_dispatch:
 
 jobs:
   prerelease:
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Extract version from pom.xml
-        id: version
-        run: |
-          VERSION=$(grep -oP '<version>\K[^<]+' pom.xml | head -1)
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+      - name: Install xml tools
+        run: sudo apt-get update && sudo apt-get install -y xmlstarlet
 
-      - name: Determine branch name
-        id: branch
+      - name: Run prerelease script
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          BRANCH_NAME: ${{ github.ref_name }}
         run: |
-          RAW="${GITHUB_REF#refs/heads/}"
-          SAFE=$(echo "$RAW" | tr '/' '-' | tr '_' '-')
-          echo "branch=$SAFE" >> $GITHUB_OUTPUT
-
-      - name: Compute next prerelease tag
-        id: tag
-        run: |
-          BASE="${{ steps.version.outputs.version }}-${{ steps.branch.outputs.branch }}"
-          
-          # Count existing prereleases for this version / branch pattern
-          COUNT=$(git tag --list "${BASE}.*" | wc -l)
-          NEXT=$((COUNT + 1))
-          
-          TAG="${BASE}.${NEXT}"
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "Next prerelease tag: $TAG"
-
-      - name: Create Git tag
-        run: |
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
-          git tag "${{ steps.tag.outputs.tag }}"
-          git push origin "${{ steps.tag.outputs.tag }}"
-
-      - name: Create GitHub prerelease
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.tag.outputs.tag }}
-          prerelease: true
+          chmod +x .github/scripts/make-prerelease.sh
+          .github/scripts/make-prerelease.sh  
