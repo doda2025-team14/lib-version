@@ -9,8 +9,21 @@ if [[ "$BRANCH" == "master" ]]; then
   exit 0
 fi
 
+if [[ ! -f pom.xml ]]; then
+  echo "ERROR: pom.xml not found!"
+  exit 1
+fi
+
+
 # Extract base version and removes snapshot
 VERSION=$(xmlstarlet sel -t -v "/project/version" pom.xml)
+
+if [[ -z "$VERSION" ]]; then
+  VERSION="1.0.0-SNAPSHOT"
+  echo "VERSION not found in pom.xml, using default: $VERSION"
+fi
+
+
 BASE_VERSION=$(echo "$VERSION" | sed 's/-SNAPSHOT//')
 
 
