@@ -31,7 +31,7 @@ BASE_VERSION=$(echo "$VERSION" | sed 's/-SNAPSHOT//')
 LABEL=$(echo "$BRANCH" | tr '/' '-' )
 PREFIX="v${BASE_VERSION}-${LABEL}"
 
-TIMESTAMP=$(date +%d%m%y-%H%M%S)
+TIMESTAMP=$(TZ="Europe/Amsterdam" date +%d%m%y-%H%M%S)
 
 NEXT="v${BASE_VERSION}-${LABEL}-${TIMESTAMP}"
 
