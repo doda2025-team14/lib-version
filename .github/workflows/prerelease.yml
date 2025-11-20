@@ -21,9 +21,6 @@ jobs:
       - name: Install xml tools
         run: sudo apt-get update && sudo apt-get install -y xmlstarlet
 
-      - name: Install GitHub CLI
-        run: sudo apt-get update && sudo apt-get install -y gh
-
       - name: Run prerelease script
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
