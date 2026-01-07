@@ -125,8 +125,8 @@ jobs:
             
             # Tag
             VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
-            git config --global user.name "version-bot[bot]"
-            git config --global user.email "version-bot[bot]@users.noreply.github.com"
+            git config --global user.name "doda-autobumper-3000[bot]"
+            git config --global user.email "doda-autobumper-3000[bot]@users.noreply.github.com"
             git remote set-url origin https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/${{ github.repository }}
             git tag "v$VERSION"
             git push origin "v$VERSION"
