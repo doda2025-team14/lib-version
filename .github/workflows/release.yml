@@ -77,7 +77,7 @@ jobs:
     runs-on: ubuntu-24.04
     if: needs.check-version.outputs.should-deploy == 'true'
     permissions:
-      contents: read
+      contents: write
       packages: write
 
     steps:
