@@ -83,6 +83,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -111,6 +113,7 @@ jobs:
         with:
           app-id: ${{ vars.VERSION_BOT_APP_ID }}
           private-key: ${{ secrets.VERSION_BOT_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
 
       - name: Release based on type
         env:
