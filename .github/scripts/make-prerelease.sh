@@ -16,8 +16,7 @@ fi
 
 
 # Extract base version and removes snapshot
-VERSION=$(xmlstarlet sel -N pom="http://maven.apache.org/POM/4.0.0" \
-  -t -v "/pom:project/pom:version" pom.xml)
+VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
 
 if [[ -z "$VERSION" ]]; then
   VERSION="1.0.0-SNAPSHOT"

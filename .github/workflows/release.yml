@@ -1,73 +1,101 @@
-name: Release
-on: push
+name: Frontend Release
+
+on:
+  push:
+    branches:
+      - master
+      - "feature/**"
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+  workflow_dispatch:
+
 jobs:
-  check-version:
-    runs-on: ubuntu-24.04
-    outputs:
-      should-deploy: ${{ steps.check.outputs.changed }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-      
-      - name: Get current version
-        id: get-version
-        run: |
-          VERSION=$(grep -oP '<version>\K[^<]+' pom.xml | head -1)
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Current version: $VERSION"
-      
-      - name: Compare with previous version
-        id: check
-        run: |
-          CURRENT_VERSION="${{ steps.get-version.outputs.version }}"
-          
-          # Skip SNAPSHOT versions
-          if [[ "$CURRENT_VERSION" == *"SNAPSHOT"* ]]; then
-            echo "SNAPSHOT version, skipping release"
-            echo "changed=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          
-          # Try to get previous version
-          if git checkout HEAD~1 2>/dev/null; then
-            PREVIOUS_VERSION=$(grep -oP '<version>\K[^<]+' pom.xml | head -1)
-            git checkout -
-            echo "Previous version: $PREVIOUS_VERSION"
-          else
-            echo "First commit, treating as version change"
-            PREVIOUS_VERSION=""
-          fi
-          
-          if [ "$CURRENT_VERSION" != "$PREVIOUS_VERSION" ]; then
-            echo "Version changed, will deploy"
-            echo "changed=true" >> $GITHUB_OUTPUT
-          else
-            echo "Version unchanged, skipping deploy"
-            echo "changed=false" >> $GITHUB_OUTPUT
-          fi
-
-
-  build:
-    needs: check-version
-    runs-on: ubuntu-24.04
-    if: needs.check-version.outputs.should-deploy == 'true'
+  release:
+    runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       packages: write
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Set up Java
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@v4
         with:
-          java-version: '25'
-          distribution: 'temurin'
-        
-      - name: Deploy to GitHub Packages
-        run: mvn -B deploy
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Set up JDK
+        uses: actions/setup-java@v3
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - name: Determine version and tags
+        id: version
+        run: |
+          # Get base version from pom.xml
+          CURRENT_VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+          BASE_VERSION=${CURRENT_VERSION%-SNAPSHOT}
+          
+          BRANCH="${{ github.ref_name }}"
+          SHORT_SHA="${GITHUB_SHA:0:7}"
+          IMAGE="ghcr.io/${{ github.repository }}"
+          
+          # Determine version suffix and semantic tags based on branch
+          if [[ "$BRANCH" == "master" ]]; then
+            # Stable release: increment patch, tag as stable
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$BASE_VERSION"
+            PATCH=$((PATCH + 1))
+            VERSION="$MAJOR.$MINOR.$PATCH"
+            TAGS="-t $IMAGE:$VERSION -t $IMAGE:stable -t $IMAGE:latest"
+            
+          elif [[ "$BRANCH" == feature/* ]] || [[ "$BRANCH" == experiment/* ]]; then
+            # Feature/experiment branch: append branch name + SHA, tag as experimental
+            BRANCH_SLUG=$(echo "$BRANCH" | sed 's|/|-|g' | tr '[:upper:]' '[:lower:]')
+            VERSION="${BASE_VERSION}-${BRANCH_SLUG}-${SHORT_SHA}"
+            TAGS="-t $IMAGE:$VERSION -t $IMAGE:experimental -t $IMAGE:latest"
+            
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            # PR build: append pr number + SHA, no semantic tags
+            PR_NUM="${{ github.event.pull_request.number }}"
+            VERSION="${BASE_VERSION}-pr-${PR_NUM}-${SHORT_SHA}"
+            TAGS="-t $IMAGE:$VERSION"
+            
+          else
+            # Other branches: just version + SHA
+            VERSION="${BASE_VERSION}-${SHORT_SHA}"
+            TAGS="-t $IMAGE:$VERSION -t $IMAGE:latest"
+          fi
+          
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "TAGS=$TAGS" >> $GITHUB_ENV
+          echo "Building version: $VERSION"
+          echo "Tags: $TAGS"
+
+      - name: Update pom.xml version
+        run: |
+          mvn versions:set -DnewVersion=${VERSION} -DgenerateBackupPoms=false
+          mvn versions:commit
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        run: |
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --build-arg GITHUB_USER=${{ github.actor }} \
+            --build-arg GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }} \
+            --build-arg VERSION=$VERSION \
+            $TAGS \
+            --push .
