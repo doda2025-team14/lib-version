@@ -36,6 +36,10 @@ NEXT="v${BASE_VERSION}-${LABEL}-${TIMESTAMP}"
 
 echo "Creating prerelease tag: $NEXT"
 
+# Update pom.xml version for deployment (remove 'v' prefix for Maven)
+MVN_VERSION="${NEXT#v}"
+mvn versions:set -DnewVersion="${MVN_VERSION}" -DgenerateBackupPoms=false
+
 # Create tag
 git tag "$NEXT"
 git push origin "$NEXT"
