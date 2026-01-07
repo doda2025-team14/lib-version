@@ -115,6 +115,13 @@ jobs:
             echo "Performing stable release..."
             mvn -B deploy
             
+            # Tag
+            VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+            git config --global user.name "github-actions[bot]"
+            git config --global user.email "github-actions[bot]@users.noreply.github.com"
+            git tag "v$VERSION"
+            git push origin "v$VERSION"
+            
             # Post-release: Bump to next SNAPSHOT
             echo "Bumping version to next SNAPSHOT..."
             
