@@ -16,8 +16,7 @@ fi
 
 
 # Extract base version and removes snapshot
-VERSION=$(xmlstarlet sel -N pom="http://maven.apache.org/POM/4.0.0" \
-  -t -v "/pom:project/pom:version" pom.xml)
+VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
 
 if [[ -z "$VERSION" ]]; then
   VERSION="1.0.0-SNAPSHOT"
@@ -36,6 +35,10 @@ TIMESTAMP=$(TZ="Europe/Amsterdam" date +%d%m%y-%H%M%S)
 NEXT="v${BASE_VERSION}-${LABEL}-${TIMESTAMP}"
 
 echo "Creating prerelease tag: $NEXT"
+
+# Update pom.xml version for deployment (remove 'v' prefix for Maven)
+MVN_VERSION="${NEXT#v}"
+mvn versions:set -DnewVersion="${MVN_VERSION}" -DgenerateBackupPoms=false
 
 # Create tag
 git tag "$NEXT"

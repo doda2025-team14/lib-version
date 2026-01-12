@@ -1,10 +1,18 @@
 name: Release
-on: push
+on:
+  push:
+    branches:
+      - master
+      - "feature/**"
+      - "experiment/**"
+  workflow_dispatch:
+
 jobs:
   check-version:
     runs-on: ubuntu-24.04
     outputs:
       should-deploy: ${{ steps.check.outputs.changed }}
+      is-stable: ${{ steps.check.outputs.stable }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -22,15 +30,30 @@ jobs:
         id: check
         run: |
           CURRENT_VERSION="${{ steps.get-version.outputs.version }}"
+          BRANCH="${{ github.ref_name }}"
           
-          # Skip SNAPSHOT versions
-          if [[ "$CURRENT_VERSION" == *"SNAPSHOT"* ]]; then
-            echo "SNAPSHOT version, skipping release"
+          # Determine if this is a stable release (master + non-SNAPSHOT)
+          if [[ "$BRANCH" == "master" ]] && [[ "$CURRENT_VERSION" != *"SNAPSHOT"* ]]; then
+            echo "stable=true" >> $GITHUB_OUTPUT
+          else
+            echo "stable=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # Skip SNAPSHOT versions on master
+          if [[ "$BRANCH" == "master" ]] && [[ "$CURRENT_VERSION" == *"SNAPSHOT"* ]]; then
+            echo "SNAPSHOT version on master, skipping release"
             echo "changed=false" >> $GITHUB_OUTPUT
             exit 0
           fi
           
-          # Try to get previous version
+          # For feature branches always deploy as prerelease
+          if [[ "$BRANCH" == feature/* ]] || [[ "$BRANCH" == experiment/* ]]; then
+            echo "Feature/experiment branch, will deploy prerelease"
+            echo "changed=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Try to get previous version (for master version change detection)
           if git checkout HEAD~1 2>/dev/null; then
             PREVIOUS_VERSION=$(grep -oP '<version>\K[^<]+' pom.xml | head -1)
             git checkout -
@@ -54,20 +77,84 @@ jobs:
     runs-on: ubuntu-24.04
     if: needs.check-version.outputs.should-deploy == 'true'
     permissions:
-      contents: read
+      contents: write
       packages: write
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
           java-version: '25'
           distribution: 'temurin'
+
+      - name: Determine release type
+        id: release-type
+        run: |
+          BRANCH="${{ github.ref_name }}"
+          IS_STABLE="${{ needs.check-version.outputs.is-stable }}"
+          
+          if [[ "$IS_STABLE" == "true" ]]; then
+            echo "type=stable" >> $GITHUB_OUTPUT
+            echo "Stable release"
+          else
+            echo "type=prerelease" >> $GITHUB_OUTPUT
+            echo "Prerelease/experimental deployment"
+          fi
         
-      - name: Deploy to GitHub Packages
-        run: mvn -B deploy
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.VERSION_BOT_APP_ID }}
+          private-key: ${{ secrets.VERSION_BOT_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Release based on type
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          BRANCH_NAME: ${{ github.ref_name }}
+        run: |
+          TYPE="${{ steps.release-type.outputs.type }}"
+          
+          # Configuration for all release types
+          git config --global user.name "doda-autobumper-3000[bot]"
+          git config --global user.email "doda-autobumper-3000[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${APP_TOKEN}@github.com/${{ github.repository }}"
+          
+          if [[ "$TYPE" == "stable" ]]; then
+            echo "Performing stable release..."
+            mvn -B deploy
+            
+            # Tag
+            VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+            git tag "v$VERSION"
+            git push origin "v$VERSION"
+            
+            # Post-release: Bump to next SNAPSHOT
+            echo "Bumping version to next SNAPSHOT..."
+            
+            mvn build-helper:parse-version versions:set \
+              -DnewVersion=\${parsedVersion.majorVersion}.\${parsedVersion.minorVersion}.\${parsedVersion.nextPatchVersion}-SNAPSHOT \
+              -DgenerateBackupPoms=false
+            
+            NEW_DEV_VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+            
+            git add pom.xml
+            git commit -m "chore: bump version to $NEW_DEV_VERSION [skip ci]"
+            git push origin master
+            
+          else
+            echo "Performing prerelease..."
+            chmod +x .github/scripts/make-prerelease.sh
+            .github/scripts/make-prerelease.sh
+            
+            mvn -B deploy
+          fi
